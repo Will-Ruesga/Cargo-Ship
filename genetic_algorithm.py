@@ -18,29 +18,6 @@ OPTIMUM = 0
 ####################
 ### MISCELANIOUS ###
 ####################
-def fitness_sorting(next, next_f):
-    '''
-    Sort nextgen and nextgen_f from the best to worst fitness value
-    '''
-    nextgen = next
-    nextgen_f = next_f
-    change = True
-    while(change):
-        change = False
-        for i in range(len(nextgen_f)-1):
-            if nextgen_f[i] < nextgen_f[i+1]:
-                aux1 = nextgen[i]
-                nextgen[i] = nextgen[i+1]
-                nextgen[i+1] = aux1
-
-                aux3 = nextgen_f[i]
-                nextgen_f[i] = nextgen_f[i+1]
-                nextgen_f[i+1] = aux3
-
-                change = True
-    
-    return nextgen, nextgen_f
-
 def bubble(array, index1, index2):
     '''
     Swap two array values given the indexes
@@ -51,6 +28,62 @@ def bubble(array, index1, index2):
     new_arr[index2] = aux
     return new_arr
 
+def add_and_shift(array, element, to):
+    '''
+    Adds new element to array and shifts backwards the rest
+    '''
+    arr = array.copy()
+    fr = len(arr) - 1
+    if fr >= arr.size or to >= arr.size:
+        return None
+    if fr > to:
+        arr[to+1:fr+1] = arr[to:fr]
+    else:
+        arr[fr:to] = arr[fr+1:to+1]
+    arr[to] = element
+    return arr
+
+def fitness_sorting(gen, lonF, latF):
+    '''
+    Sort nextgen and nextgen_f from the small to big fitness value
+    '''
+    plans = gen
+    plans_lonF = lonF
+    plans_latF = latF
+    change = True
+    while(change):
+        change = False
+        for i in range(len(plans)-1):
+            # Compute averages
+            avg = (plans_lonF[i] + plans_latF[i]) / 2
+            next_avg = (plans_lonF[i+1] + plans_latF[i+1]) / 2
+
+            # Bubble sort
+            if avg > next_avg:
+                plans = bubble(plans, i, i+1)
+                plans_lonF = bubble(plans_lonF, i, i+1)
+                plans_latF = bubble(plans_latF, i, i+1)
+
+                # aux1 = plans[i]
+                # plans[i] = plans[i+1]
+                # plans[i+1] = aux1
+
+                # aux2 = plans_lonF[i]
+                # plans_lonF[i] = plans_lonF[i+1]
+                # plans_lonF[i+1] = aux2
+
+                # aux3 = plans_latF[i]
+                # plans_latF[i] = plans_latF[i+1]
+                # plans_latF[i+1] = aux3
+
+                change = True
+    
+    return np.array(plans), np.array(plans_lonF), np.array(plans_latF)
+
+
+###################################################################################################################################
+# ------------------------------------------------------ GENETIC ALGORITHM ------------------------------------------------------ #
+###################################################################################################################################
 class GeneticAlgorithm():
     def __init__(self, mu_, lambda_, budget, recomb_type):
         self.mu_ = mu_
@@ -58,7 +91,29 @@ class GeneticAlgorithm():
         self.budget = budget
         self.initial_budget = budget
         self.recomb_type = recomb_type
-        
+        self.opt_plans = None
+        self.opt_lonF = None
+        self.opt_latF = None
+
+    ####################
+    ### MISCELANIOUS ###
+    ####################
+    def update_plans(self, plans, plans_lonF, plans_latF):
+        # Sort by average fitness
+        plans, plans_lonF, plans_latF = fitness_sorting(plans, plans_lonF, plans_latF)
+
+        # Update the optimal population if needed
+        for i in range(len(plans)):
+            opt_avg = (self.opt_lonF + self.opt_latF) / 2
+            for j in range(self.mu_):
+                avg = (plans_lonF[i] + plans_latF[i]) / 2
+                if avg < opt_avg[j]:
+                    self.opt_plans = add_and_shift(self.opt_plans, plans[i], j)
+                    self.opt_lonF = add_and_shift(self.opt_lonF, plans_lonF[i], j)
+                    self.opt_latF = add_and_shift(self.opt_latF, plans_latF[i], j)
+                    i += 1
+
+    
     #############################
     ### INITIALISE POPULATION ###
     #############################
@@ -75,11 +130,9 @@ class GeneticAlgorithm():
     ### EVALUATE POPULATION ###
     ###########################
     def evaluate_population(self, cargoShipMO, plans) -> List[float]:
-        plans_f = []
-        plans_v = []
-        status = False
+        plans_lonF = []
+        plans_latF = []
         for plan in plans:
-            valid = True
 
             # Evaluate objective and constraints with the current plan
             objective_values = [None] * 2
@@ -88,24 +141,24 @@ class GeneticAlgorithm():
                 objective_values[i] = cargoShipMO.objectives[i].evaluator(plan)
                 constraint_violations[i] = cargoShipMO.constraints[i].evaluator(plan, objective_values[i])
             
-            # Check if it is a valid solution
+            # Compute fitness AND Check if valid solution
             if constraint_violations[1] > 0:
-                valid = False
-            
-            # Compute fitness
-            constraint_violations = np.array(constraint_violations) / len(plan)
-            fitness = sum(objective_values) + sum(constraint_violations)
-            # print(f'Fitness: {fitness}')
-            plans_f.append(fitness)
-            plans_v.append(valid)
+                lat_fitness = lon_fitness = np.inf # Not valid solution
+            else:
+                norm_violations = constraint_violations[0] / len(plan)
+                lon_fitness = objective_values[0] + norm_violations
+                lat_fitness = objective_values[1] + norm_violations
+
+            # Append the fitness values
+            plans_lonF.append(lon_fitness)
+            plans_latF.append(lat_fitness)
 
             # Take out budget
             if (self.budget % 100000 == 0) and (self.budget is not self.initial_budget):
                 print(f'\n### Budget -->{self.initial_budget - self.budget}/{self.initial_budget} ###')
-                status = True
             self.budget -= 1
 
-        return plans_f, plans_v, status
+        return plans_lonF, plans_latF
 
 
     ################################
@@ -151,12 +204,13 @@ class GeneticAlgorithm():
     ### SELECTION ALGORITHMS ###
     ############################
     # _______________________ Selection _______________________ #
-    def selection(self, plans: List[np.ndarray], fitness_values: List[float]):
-        considering_plans, considering_fitness = fitness_sorting(plans, fitness_values)
+    def selection(self, plans, lonF, latF):
+        considering_plans, considering_lonF, considering_latF = fitness_sorting(plans, lonF, latF)
         next_plans = considering_plans[:self.mu_]
-        next_fitnes = considering_fitness[:self.mu_]
+        next_lonF = considering_lonF[:self.mu_]
+        next_latF = considering_latF[:self.mu_]
         
-        return next_plans, next_fitnes
+        return next_plans, next_lonF, next_latF
 
     #########################
     ### GENETIC ALGORITHM ###
@@ -165,24 +219,18 @@ class GeneticAlgorithm():
 
         # ____________________ Initiaise the population ____________________ #
         print('Starting...')
-        f_opt = np.inf
         plans = self.initialize_population(cargo_ship, num_containers)
-        plans_f, plans_v, _ = self.evaluate_population(cargoShipMO, plans)
-        
-        # Select best
-        id_min = np.argmin(plans_f)
-        if (f_opt > plans_f[id_min]) and (plans_v[id_min] == True):
-            opt_index = id_min
-            f_opt = plans_f[opt_index]
-            optimal = plans[opt_index]
+        plans_lonF, plans_latF = self.evaluate_population(cargoShipMO, plans)
 
+        # Initialise optimal plans lenngth mu_
+        self.opt_plans, self.opt_lonF, self.opt_latF = fitness_sorting(plans, plans_lonF, plans_latF)
 
         # Genetic Algorithm: Optimization Loop
-        while (f_opt > OPTIMUM) and self.budget > 0:
+        while self.budget > 0:
 
             # ____________________ Recombination ____________________ #
             # print(f'Recombination... (Type -> {self.recomb_type})')
-            plan = random.SystemRandom().choice(plans)
+            plan = random.SystemRandom().choice(self.opt_plans)
             # print(f'Plan selected for recombination is None? {plan.shape}')
             # Select the type and create new plans (offsprings of size lambda_)
             if self.recomb_type == FULL_RECOMBINATION:
@@ -197,38 +245,29 @@ class GeneticAlgorithm():
 
             # ____________________ Evaluate the plans (population) ____________________ #
             # print('Evaluation...')
-            newPlans_f, newPlans_v, status = self.evaluate_population(cargoShipMO, newPlans)
-            if status:
-                print(f'Status report:')
-                print(f'  Current best fitness -> {f_opt}')
+            newPlans_lonF, newPlans_latF = self.evaluate_population(cargoShipMO, newPlans)
 
-            # Select best
-            id_min = np.argmin(newPlans_f)
-            if (f_opt > newPlans_f[id_min]) and (newPlans_v[id_min] == True):
-                opt_index = id_min
-                f_opt = newPlans_f[opt_index]
-                optimal = newPlans[opt_index]
+            # Select best ones and add to optimal population if necessary
+            self.update_plans(newPlans, newPlans_lonF, newPlans_latF)
 
-            # Stoop when budget reached or optimum is found
-            # print(f'Current Best Plan: {f_opt}')
-            if (f_opt == OPTIMUM) or (self.budget <= 0): break
+            # Stoop when budget reached
+            if (self.budget <= 0): break
 
             # ____________________ Seletion ____________________ #
             # print('Selection...')
             if (self.lambda_ / self.mu_) > 5:
                 # print('Selection coma')
                 # Only consider new plans (offsprings)
-                plans, plans_f = self.selection(newPlans, newPlans_f)
+                plans, plans_lonF, plans_latF = self.selection(newPlans, newPlans_lonF, newPlans_latF)
             else:
                 # Consider plans and new plans (parents and offsprings)
                 # print('Selction plus')
                 allPlans = np.concatenate((plans, newPlans))
-                allPlans_f = np.concatenate((plans_f, newPlans_f))
-                plans, plans_f = self.selection(allPlans, allPlans_f)
+                allPlans_lonF = np.concatenate((plans_lonF, newPlans_lonF))
+                allPlans_latF = np.concatenate((plans_latF, newPlans_latF))
+                plans, plans_lonF, plans_latF = self.selection(allPlans, allPlans_lonF, allPlans_latF)
 
         print('\nFinished!!')
-        if f_opt == OPTIMUM:
-            print('Optimum reached')
-        else:
-            print('Budget reached')
-        return optimal, f_opt
+        print('Budget reached')
+
+        return self.opt_plans, self.opt_lonF, self.opt_latF

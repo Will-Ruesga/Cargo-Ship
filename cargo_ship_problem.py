@@ -5,6 +5,7 @@
 # General
 import random
 import numpy as np
+import matplotlib.pyplot as plt
 
 # Genetic Algorithm
 from typing import List, Tuple
@@ -173,8 +174,8 @@ for bay in range(bays):
                                                    harbor=destinations[bay, tier, row])
             
 # Initialise Generic Algoritm
-mu_ = 10
-lambda_ = 20
+mu_ = 20
+lambda_ = 40
 budget = 500000
 recomb_type = 0
 evolAlgo = ga.GeneticAlgorithm(mu_, lambda_, budget, recomb_type)
@@ -183,7 +184,21 @@ evolAlgo = ga.GeneticAlgorithm(mu_, lambda_, budget, recomb_type)
 cargoShipMO = initialise_cargo_ship_problem(num_containers)
 
 # _____________ Genetic Algorithm _____________ #
-optPlan, optPlan_f = evolAlgo.geneticAlgorithm(cargo_ship, cargoShipMO, num_containers)
-optPlan = optPlan.reshape(bays, tiers, rows)
-print(f'Final Solution Score: {optPlan_f}')
-print(f'Final Solution: {optPlan}')
+optPlans, optPlans_lonF, optPlans_latF = evolAlgo.geneticAlgorithm(cargo_ship, cargoShipMO, num_containers)
+optPlans = optPlans.reshape(mu_, bays, tiers, rows)
+print(f'Longitudinal Fitness of Optimal Population: {optPlans_lonF}')
+print(f'Latitudinal Fitness of Optimal Population: {optPlans_latF}')
+print(f'Final Solution: {optPlans.shape}')
+
+
+# _____________ Plot Pareto Region Comparison with Random Population _____________ #
+rndPlans = evolAlgo.initialize_population(cargo_ship, num_containers)
+rndPlans_lonF, rndPlans_latF = evolAlgo.evaluate_population(cargoShipMO, rndPlans)
+
+plt.figure()
+plt.scatter(optPlans_lonF, optPlans_latF, c='red')
+plt.scatter(rndPlans_lonF, rndPlans_latF, c='blue')
+plt.title('Cargo Ship Problem - Pareto Region (red) and Random Region (blue)')
+plt.xlabel('Longitudinal optimization')
+plt.ylabel('Latitudinal Optimization')
+plt.show()
