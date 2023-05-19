@@ -100,8 +100,8 @@ class GeneticAlgorithm():
             plans_v.append(valid)
 
             # Take out budget
-            if self.budget % 100000 == 0:
-                print(f'\n### Budget -->{self.budget}/{self.initial_budget} ###')
+            if (self.budget % 100000 == 0) and (self.budget is not self.initial_budget):
+                print(f'\n### Budget -->{self.initial_budget - self.budget}/{self.initial_budget} ###')
                 status = True
             self.budget -= 1
 
@@ -164,7 +164,7 @@ class GeneticAlgorithm():
     def geneticAlgorithm(self, cargo_ship, cargoShipMO, num_containers):
 
         # ____________________ Initiaise the population ____________________ #
-        print('Initialise...')
+        print('Starting...')
         f_opt = np.inf
         plans = self.initialize_population(cargo_ship, num_containers)
         plans_f, plans_v, _ = self.evaluate_population(cargoShipMO, plans)
