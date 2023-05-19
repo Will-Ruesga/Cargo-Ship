@@ -175,7 +175,7 @@ for bay in range(bays):
 # Initialise Generic Algoritm
 mu_ = 10
 lambda_ = 20
-budget = 500
+budget = 500000
 recomb_type = 0
 evolAlgo = ga.GeneticAlgorithm(mu_, lambda_, budget, recomb_type)
 
@@ -184,6 +184,6 @@ cargoShipMO = initialise_cargo_ship_problem(num_containers)
 
 # _____________ Genetic Algorithm _____________ #
 optPlan, optPlan_f = evolAlgo.geneticAlgorithm(cargo_ship, cargoShipMO, num_containers)
-
+optPlan = optPlan.reshape(bays, tiers, rows)
 print(f'Final Solution Score: {optPlan_f}')
-print(f'Final Solution Score: {optPlan.reshape(bays, tiers, rows)}')
+print(f'Final Solution: {optPlan}')

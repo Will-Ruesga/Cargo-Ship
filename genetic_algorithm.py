@@ -56,6 +56,7 @@ class GeneticAlgorithm():
         self.mu_ = mu_
         self.lambda_ = lambda_
         self.budget = budget
+        self.initial_budget = budget
         self.recomb_type = recomb_type
         
     #############################
@@ -75,27 +76,36 @@ class GeneticAlgorithm():
     ###########################
     def evaluate_population(self, cargoShipMO, plans) -> List[float]:
         plans_f = []
+        plans_v = []
+        status = False
         for plan in plans:
+            valid = True
 
             # Evaluate objective and constraints with the current plan
-            print(cargoShipMO.objectives[0])
-            print(cargoShipMO.objectives[1])
-
-            print(f'plan: {len(plan)}')
-            objective_values = [] * 2
-            constraint_violations = [] * 2
+            objective_values = [None] * 2
+            constraint_violations = [None] * 2
             for i in range(2):
-                print(i)
                 objective_values[i] = cargoShipMO.objectives[i].evaluator(plan)
                 constraint_violations[i] = cargoShipMO.constraints[i].evaluator(plan, objective_values[i])
-
+            
+            # Check if it is a valid solution
+            if constraint_violations[1] > 0:
+                valid = False
+            
             # Compute fitness
             constraint_violations = np.array(constraint_violations) / len(plan)
             fitness = sum(objective_values) + sum(constraint_violations)
-            print(f'Fitness: {fitness}')
+            # print(f'Fitness: {fitness}')
             plans_f.append(fitness)
+            plans_v.append(valid)
 
-        return plans_f
+            # Take out budget
+            if self.budget % 100000 == 0:
+                print(f'\n### Budget -->{self.budget}/{self.initial_budget} ###')
+                status = True
+            self.budget -= 1
+
+        return plans_f, plans_v, status
 
 
     ################################
@@ -103,15 +113,16 @@ class GeneticAlgorithm():
     ################################
     # ________________ Full Recombination ________________ #
     def full_recombination(self, plan) -> List[np.ndarray]:
-        new_plans = [] * self.lambda_
+        newPlans = [] * self.lambda_
         for _ in range(self.lambda_):
             perm = np.random.permutation(plan)
-            new_plans.append(perm)
-        return new_plans
+            newPlans.append(perm)
+
+        return newPlans
 
     # ________________ Single Recombination ________________ #
     def single_recombination(self, plan, num_containers) -> List[np.ndarray]:
-        new_plans = [] * self.lambda_
+        newPlans = [] * self.lambda_
         for _ in range(self.lambda_):
             # Select single recombination
             i = np.random.randint(num_containers)
@@ -121,17 +132,19 @@ class GeneticAlgorithm():
             
             # bubble method
             perm = bubble(plan, i, j)
-            new_plans.append(perm)
-        return new_plans
+            newPlans.append(perm)
+
+        return newPlans
 
     # ________________ First Axis Recombination ________________ #
     def fisrt_axis_recombination(self, plan, num_containers) -> List[np.ndarray]:
         plan = plan.reshape((8,3,4))
-        new_plans = [] * self.lambda_
+        newPlans = [] * self.lambda_
         for _ in range(self.lambda_):
             perm = np.random.permutation(plan)
-            new_plans.append(perm.reshape(num_containers))
-        return new_plans
+            newPlans.append(perm.reshape(num_containers))
+
+        return newPlans
 
 
     ############################
@@ -152,48 +165,70 @@ class GeneticAlgorithm():
 
         # ____________________ Initiaise the population ____________________ #
         print('Initialise...')
+        f_opt = np.inf
         plans = self.initialize_population(cargo_ship, num_containers)
-        plans_f = self.evaluate_population(cargoShipMO, plans)
+        plans_f, plans_v, _ = self.evaluate_population(cargoShipMO, plans)
+        
+        # Select best
+        id_min = np.argmin(plans_f)
+        if (f_opt > plans_f[id_min]) and (plans_v[id_min] == True):
+            opt_index = id_min
+            f_opt = plans_f[opt_index]
+            optimal = plans[opt_index]
+
 
         # Genetic Algorithm: Optimization Loop
         while (f_opt > OPTIMUM) and self.budget > 0:
 
             # ____________________ Recombination ____________________ #
-            print('Recombination...')
-            plan = np.random.choice(plans)
-
+            # print(f'Recombination... (Type -> {self.recomb_type})')
+            plan = random.SystemRandom().choice(plans)
+            # print(f'Plan selected for recombination is None? {plan.shape}')
             # Select the type and create new plans (offsprings of size lambda_)
             if self.recomb_type == FULL_RECOMBINATION:
-                new_plans = self.full_recombination(plan)
+                # print('Full recombination')
+                newPlans = self.full_recombination(plan)
             elif self.recomb_type == SINGLE_RECOMBINATION:
-                new_plans = self.single_recombination(plan, num_containers)
+                # print('Single recombination')
+                newPlans = self.single_recombination(plan, num_containers)
             elif self.recomb_type == FIRST_AXIS_RECOMBINATION:
-                new_plans = self.fisrt_axis_recombination(plan, num_containers)
+                # print('First Axis recombination')
+                newPlans = self.fisrt_axis_recombination(plan, num_containers)
 
             # ____________________ Evaluate the plans (population) ____________________ #
-            print('Evaluation...')
-            new_plans_f = self.evaluate_population(cargoShipMO, new_plans)
-
-            # Take out budget
-            self.budget = self.budget - self.lambda_
+            # print('Evaluation...')
+            newPlans_f, newPlans_v, status = self.evaluate_population(cargoShipMO, newPlans)
+            if status:
+                print(f'Status report:')
+                print(f'  Current best fitness -> {f_opt}')
 
             # Select best
-            opt_index = np.argmax(new_plans_f)
-            f_opt = new_plans_f[opt_index]
-            optimal = new_plans[opt_index]
+            id_min = np.argmin(newPlans_f)
+            if (f_opt > newPlans_f[id_min]) and (newPlans_v[id_min] == True):
+                opt_index = id_min
+                f_opt = newPlans_f[opt_index]
+                optimal = newPlans[opt_index]
 
             # Stoop when budget reached or optimum is found
+            # print(f'Current Best Plan: {f_opt}')
             if (f_opt == OPTIMUM) or (self.budget <= 0): break
 
             # ____________________ Seletion ____________________ #
-            print('Selection...')
+            # print('Selection...')
             if (self.lambda_ / self.mu_) > 5:
+                # print('Selection coma')
                 # Only consider new plans (offsprings)
-                plans, plans_f = self.selection(new_plans, new_plans_f)
+                plans, plans_f = self.selection(newPlans, newPlans_f)
             else:
                 # Consider plans and new plans (parents and offsprings)
-                allPlans = np.concatenate((plans, new_plans))
-                allPlans_f = np.concatenate((plans_f, new_plans_f))
+                # print('Selction plus')
+                allPlans = np.concatenate((plans, newPlans))
+                allPlans_f = np.concatenate((plans_f, newPlans_f))
                 plans, plans_f = self.selection(allPlans, allPlans_f)
+
         print('\nFinished!!')
+        if f_opt == OPTIMUM:
+            print('Optimum reached')
+        else:
+            print('Budget reached')
         return optimal, f_opt
