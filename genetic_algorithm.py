@@ -73,18 +73,29 @@ class GeneticAlgorithm():
     ###########################
     ### EVALUATE POPULATION ###
     ###########################
-    def evaluate_population(self, unloading_plans: List[np.ndarray], cs_prob) -> List[float]:
-        fitness_values = []
-        for plan in unloading_plans:
-            objective_values = np.array([obj.evaluator(plan) for obj in cs_prob.objectives])
-            constraint_violations = np.array([con.evaluator(plan) for con in cs_prob.constraints])
+    def evaluate_population(self, cargoShipMO, plans) -> List[float]:
+        plans_f = []
+        for plan in plans:
 
-            # TO DO: fitness function
-            print('Fitness function not implemented')
-            fitness = np.random.randint(0, 10)
-            print(fitness)
-            fitness_values.append(fitness)
-        return fitness_values
+            # Evaluate objective and constraints with the current plan
+            print(cargoShipMO.objectives[0])
+            print(cargoShipMO.objectives[1])
+
+            print(f'plan: {len(plan)}')
+            objective_values = [] * 2
+            constraint_violations = [] * 2
+            for i in range(2):
+                print(i)
+                objective_values[i] = cargoShipMO.objectives[i].evaluator(plan)
+                constraint_violations[i] = cargoShipMO.constraints[i].evaluator(plan, objective_values[i])
+
+            # Compute fitness
+            constraint_violations = np.array(constraint_violations) / len(plan)
+            fitness = sum(objective_values) + sum(constraint_violations)
+            print(f'Fitness: {fitness}')
+            plans_f.append(fitness)
+
+        return plans_f
 
 
     ################################
@@ -137,17 +148,18 @@ class GeneticAlgorithm():
     #########################
     ### GENETIC ALGORITHM ###
     #########################
-    def geneticAlgorithm(self, cargo_ship, num_containers):
+    def geneticAlgorithm(self, cargo_ship, cargoShipMO, num_containers):
 
         # ____________________ Initiaise the population ____________________ #
         print('Initialise...')
         plans = self.initialize_population(cargo_ship, num_containers)
-        plans_f = self.evaluate_population(plans)
+        plans_f = self.evaluate_population(cargoShipMO, plans)
 
         # Genetic Algorithm: Optimization Loop
         while (f_opt > OPTIMUM) and self.budget > 0:
 
             # ____________________ Recombination ____________________ #
+            print('Recombination...')
             plan = np.random.choice(plans)
 
             # Select the type and create new plans (offsprings of size lambda_)
@@ -159,7 +171,8 @@ class GeneticAlgorithm():
                 new_plans = self.fisrt_axis_recombination(plan, num_containers)
 
             # ____________________ Evaluate the plans (population) ____________________ #
-            new_plans_f = self.evaluate_population(new_plans)
+            print('Evaluation...')
+            new_plans_f = self.evaluate_population(cargoShipMO, new_plans)
 
             # Take out budget
             self.budget = self.budget - self.lambda_
@@ -173,6 +186,7 @@ class GeneticAlgorithm():
             if (f_opt == OPTIMUM) or (self.budget <= 0): break
 
             # ____________________ Seletion ____________________ #
+            print('Selection...')
             if (self.lambda_ / self.mu_) > 5:
                 # Only consider new plans (offsprings)
                 plans, plans_f = self.selection(new_plans, new_plans_f)
@@ -181,5 +195,5 @@ class GeneticAlgorithm():
                 allPlans = np.concatenate((plans, new_plans))
                 allPlans_f = np.concatenate((plans_f, new_plans_f))
                 plans, plans_f = self.selection(allPlans, allPlans_f)
-
+        print('\nFinished!!')
         return optimal, f_opt

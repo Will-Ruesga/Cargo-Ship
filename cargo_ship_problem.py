@@ -30,37 +30,38 @@ class Container():
 ###########################
 ### OBJECTIVE FUNCTIONS ###
 ###########################
-def longitudinal_objective(ind):
+def longitudinal_objective(plan):
     '''
     Calculate longitudinal center of gravityand.
+    container = 12.19m long x 2.44m wide x 2.59m high
     Returns the distance from the middle of the section
     '''
     total = 0
     weighted = 0
-    ind = np.reshape(ind, (bays, tiers, rows))
-    for bay in range(ind.shape[0]):
-        for tier in range(ind.shape[1]):
-            for row in range(ind.shape[2]):
-                total += ind[bay, tier, row].w
-                weighted += ind[bay, tier, row].w * (bay+1)
+    plan = np.reshape(plan, (bays, tiers, rows))
+    for bay in range(plan.shape[0]):
+        for tier in range(plan.shape[1]):
+            for row in range(plan.shape[2]):
+                total += plan[bay, tier, row].w
+                weighted += plan[bay, tier, row].w * (bay+1)
 
     # print(f'Longitudinal dist to center: {abs(weighted/total-4.5)}')  
     return abs(weighted/total-4.5)
 
 
-def latitudinal_objective(ind):
+def latitudinal_objective(plan):
     '''
     Calculate latitudinal center of gravity.
     Returns the distance from the middle of the section
     '''
     total = 0
     weighted = 0
-    ind = np.reshape(ind, (bays, tiers, rows))
-    for bay in range(ind.shape[0]):
-        for tier in range(ind.shape[1]):
-            for row in range(ind.shape[2]):
-                total +=  ind[bay, tier, row].w
-                weighted +=  ind[bay, tier, row].w * (row+1)
+    plan = np.reshape(plan, (bays, tiers, rows))
+    for bay in range(plan.shape[0]):
+        for tier in range(plan.shape[1]):
+            for row in range(plan.shape[2]):
+                total +=  plan[bay, tier, row].w
+                weighted +=  plan[bay, tier, row].w * (row+1)
 
     # print(f'Latitudinal dist to center: {abs(weighted/total-2.5)}')
     return abs(weighted/total-2.5)
@@ -69,32 +70,32 @@ def latitudinal_objective(ind):
 ############################
 ### CONSTRAINT FUNCTIONS ###
 ############################
-def unloading_constraint(ind, obj):
+def unloading_constraint(plan, obj):
     '''
     How many times containers are placed in a way that BLOCKS smooth unloading
     '''
     violations = 0
-    ind = np.reshape(ind, (bays, tiers, rows))
+    plan = np.reshape(plan, (bays, tiers, rows))
 
-    for bay in range(ind.shape[0]):
-        for tier in range(ind.shape[1] - 1): # Check only lower tiers (bottom of the cargo ship)
-            for row in range(ind.shape[2]):
-                if ind[bay, tier, row].h < ind[bay, tier+1, row].h:
+    for bay in range(plan.shape[0]):
+        for tier in range(plan.shape[1] - 1): # Check only lower tiers (bottom of the cargo ship)
+            for row in range(plan.shape[2]):
+                if plan[bay, tier, row].h < plan[bay, tier+1, row].h:
                     violations += 1
                     
     return violations
 
-def loading_constraint(ind, obj):
+def loading_constraint(plan, obj):
     '''
     Ensure heavier containers are not placed on top of lighter containers
     '''
     violations = 0
-    ind = np.reshape(ind, (bays, tiers, rows))
+    plan = np.reshape(plan, (bays, tiers, rows))
 
-    for bay in range(ind.shape[0]):
-        for tier in range(ind.shape[1]):
-            for row in range(ind.shape[2]-1):
-                if ind[bay][tier][row].w - ind[bay, tier, row+1].w > delta_w:
+    for bay in range(plan.shape[0]):
+        for tier in range(plan.shape[1]):
+            for row in range(plan.shape[2]-1):
+                if plan[bay][tier][row].w - plan[bay, tier, row+1].w > delta_w:
                     violations += 1
 
     return violations
@@ -122,9 +123,9 @@ def initialise_cargo_ship_problem(num_containers):
     return MOProblem(csObjectives, csVariables, csConstraints)
 
 
-#####################################
-### INITIALIZATION OF THE PROBLEM ###
-#####################################
+###########################
+### SOLVING THE PROBLEM ###
+###########################
 
 # -------------- Side view -------------- #
 #                   Bays                    TIERS
@@ -142,7 +143,7 @@ def initialise_cargo_ship_problem(num_containers):
 # |___||___||___||___||___||___||___||___|    1
 # |___||___||___||___||___||___||___||___|    0
 
-
+# _____________ Initialise Cargo Ship Problem _____________ #
 # Cargo Ship distribution
 bays = 8
 tiers = 3
@@ -170,3 +171,19 @@ for bay in range(bays):
             cargo_ship[bay, tier, row] = Container(name=f'Container {i}',
                                                    weight=weights[bay, tier, row],
                                                    harbor=destinations[bay, tier, row])
+            
+# Initialise Generic Algoritm
+mu_ = 10
+lambda_ = 20
+budget = 500
+recomb_type = 0
+evolAlgo = ga.GeneticAlgorithm(mu_, lambda_, budget, recomb_type)
+
+# _____________ Set Cargo Ship Problem as MOProblem _____________ #
+cargoShipMO = initialise_cargo_ship_problem(num_containers)
+
+# _____________ Genetic Algorithm _____________ #
+optPlan, optPlan_f = evolAlgo.geneticAlgorithm(cargo_ship, cargoShipMO, num_containers)
+
+print(f'Final Solution Score: {optPlan_f}')
+print(f'Final Solution Score: {optPlan.reshape(bays, tiers, rows)}')
