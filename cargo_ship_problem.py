@@ -88,7 +88,8 @@ def unloading_constraint(plan, obj):
 
 def loading_constraint(plan, obj):
     '''
-    Ensure heavier containers are not placed on top of lighter containers
+    Ensure heavier containers are not placed on top of lighter containers.
+    No container can be placed on top of an empy spot
     '''
     violations = 0
     plan = np.reshape(plan, (bays, tiers, rows))
@@ -96,7 +97,7 @@ def loading_constraint(plan, obj):
     for bay in range(plan.shape[0]):
         for tier in range(plan.shape[1]):
             for row in range(plan.shape[2]-1):
-                if plan[bay][tier][row].w - plan[bay, tier, row+1].w > delta_w:
+                if (plan[bay][tier][row].w - plan[bay, tier, row+1].w > delta_w) or (plan[bay][tier][row].w == 0 and plan[bay, tier, row+1].w > 0) :
                     violations += 1
 
     return violations
@@ -154,12 +155,19 @@ num_containers = bays * tiers * rows
 # Initialise container harbors
 # Harbor stops order --> Hamburg == 0 (First) | Aarhus == 1 (Second) | Copenhagen == 2 (Third)
 harbors = ["Hamburg", "Aarhus", "Copenhagen"]
-destinations = np.random.randint(0, len(harbors), size=(bays, tiers, rows))
+#destinations = np.random.randint(0, len(harbors), size=(bays, tiers, rows))
+#np.save('destinations10.npy', np.array(destinations))
+destinations = np.load('destinations10.npy')
 # destinations = np.random.randint(0, len(harbors), size=num_containers)
 
 # Initialise container weigths
-delta_w = 30
-weights = np.random.lognormal(2.5, 0.5, size=(bays, tiers, rows))
+empty = 1
+delta_w = 20
+#weights = np.random.lognormal(2.5, 0.5, size=(bays, tiers, rows))
+#for i in range(empty):
+#    weights[random.randint(0,bays-1), random.randint(0,tiers-1), random.randint(0,rows-1)] = 0
+weights = np.load('weights10.npy')
+print('Weights(tn): ' + str(weights))
 # weights = np.random.lognormal(2.5, 0.5, size=num_containers)
 
 # Initialise Containers
@@ -176,29 +184,29 @@ for bay in range(bays):
 # Initialise Generic Algoritm
 mu_ = 20
 lambda_ = 40
-budget = 500000
-recomb_type = 0
+budget = 5000
+recomb_type = 3
 evolAlgo = ga.GeneticAlgorithm(mu_, lambda_, budget, recomb_type)
 
 # _____________ Set Cargo Ship Problem as MOProblem _____________ #
 cargoShipMO = initialise_cargo_ship_problem(num_containers)
 
 # _____________ Genetic Algorithm _____________ #
-optPlans, optPlans_lonF, optPlans_latF = evolAlgo.geneticAlgorithm(cargo_ship, cargoShipMO, num_containers)
-optPlans = optPlans.reshape(mu_, bays, tiers, rows)
-print(f'Longitudinal Fitness of Optimal Population: {optPlans_lonF}')
-print(f'Latitudinal Fitness of Optimal Population: {optPlans_latF}')
+optPlans, optPlans_gravF, optPlans_unloadF = evolAlgo.geneticAlgorithm(cargo_ship, cargoShipMO, num_containers)
+#optPlans = optPlans.reshape(mu_, bays, tiers, rows)
+print(f'Gravitational Fitness of Optimal Population: {optPlans_gravF}')
+print(f'Unloading Fitness of Optimal Population: {optPlans_unloadF}')
 print(f'Final Solution: {optPlans.shape}')
 
 
 # _____________ Plot Pareto Region Comparison with Random Population _____________ #
 rndPlans = evolAlgo.initialize_population(cargo_ship, num_containers)
-rndPlans_lonF, rndPlans_latF = evolAlgo.evaluate_population(cargoShipMO, rndPlans)
+rndPlans_gravF, rndPlans_unloadF = evolAlgo.evaluate_population(cargoShipMO, rndPlans)
 
 plt.figure()
-plt.scatter(optPlans_lonF, optPlans_latF, c='red')
-plt.scatter(rndPlans_lonF, rndPlans_latF, c='blue')
+plt.scatter(optPlans_gravF, optPlans_unloadF, c='red')
+plt.scatter(rndPlans_gravF, rndPlans_unloadF, c='blue')
 plt.title('Cargo Ship Problem - Pareto Region (red) and Random Region (blue)')
-plt.xlabel('Longitudinal optimization')
-plt.ylabel('Latitudinal Optimization')
+plt.xlabel('Gravitational center optimization')
+plt.ylabel('Unloading plan Optimization')
 plt.show()
